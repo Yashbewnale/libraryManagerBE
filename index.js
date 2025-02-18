@@ -4,99 +4,248 @@ const mongoose = require('mongoose');
 const multer = require('multer');
 const upload = multer({ dest: 'uploads/' });
 const xlsx = require('xlsx');
-const { authenticateAdmin } = require('./services/authService');
-const { registerAdmin } = require('./services/userRegistration.js');
+const { authenticateUser } = require('./services/authService');
+const { registerUser } = require('./services/userRegistration.js');
 const Book = require('./models/book.model.js');
 const path = require('path');
 
 const user = require('./models/user.model.js');
+const Student = require('./models/student.model.js');
+const Assignment = require('./models/assignments.model.js');
 
 const app = express();
 
 app.use(express.json());
 app.use(cors())
 
-mongoURI = 'mongodb+srv://ybewnale:Yash413521@cluster0.koklh.mongodb.net/BookProject?retryWrites=true&w=majority&appName=Cluster0'
+// mongoURI = 'mongodb+srv://ybewnale:Yash413521@cluster0.koklh.mongodb.net/BookProject?retryWrites=true&w=majority&appName=Cluster0'
+mongoURI = 'mongodb+srv://yashbewnale0981:9e03cXLOQfzQf0Ce@cluster0.nopks.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0'
 
 mongoose.connect(mongoURI)
-.then(() => {
+  .then(() => {
     console.log('Connected to db');
 
     app.listen(3000, () => {
-        console.log('connected to port 3000');
+      console.log('connected to port 3000');
     });
 
-}).catch(error => {
+  }).catch(error => {
     console.error('Error', error);
-})
+  })
 
 app.get('/', (req, res) => {
-    res.send('Hello world!!');
+  res.send('Hello world!!');
 });
 
-app.post('/adminLogin', async (req, res) => {
-    let username = req.body.username;
-    let password = req.body.password;
+app.post('/userLogin', async (req, res) => {
+  let username = req.body.username;
+  let password = req.body.password;
+  let isAdmin = req.body.isAdmin;
 
-    authenticateAdmin(username, password, res);
+  authenticateUser(username, password, isAdmin, res);
 })
 
-app.post('/registerAdmin', async (req, res) => {
-    console.log('REQ',req.body);
-    const { username, password } = req.body;
+app.post('/registerUser', async (req, res) => {
+  console.log('REQ', req.body);
+  const { username, password, fullName, email, phone, isAdmin } = req.body;
 
-    registerAdmin(username, password, res);
+  registerUser(username, password, fullName, email, phone, isAdmin, res);
 });
+
+app.get('/allStudents', async (req, res) => {
+  try {
+    // only find students with assignedBooks array as empty, i.e., no books assigned
+    const students = await Student.find();
+
+    res.json(students);
+  } catch (error) {
+    console.error('Error', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+
+// BOOKS
 
 // Endpoint to upload books from an Excel file
 app.post('/uploadBooks', upload.single('file'), async (req, res) => {
-    try {
-        // Check if the uploaded file is an Excel file (only .xlsx or .xls)
-        const fileExtension = path.extname(req.file.originalname).toLowerCase();
-        if (fileExtension !== '.xlsx' && fileExtension !== '.xls') {
-            return res.status(400).json({ error: 'Invalid file format. Please upload an Excel file.' });
-        }
-
-        // Read the uploaded Excel file
-        const workbook = xlsx.readFile(req.file.path);
-        const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        const booksData = xlsx.utils.sheet_to_json(sheet);
-
-        // Map the data and insert it into MongoDB
-        const books = booksData.map(data => ({
-            bookName: data.bookName,
-            author: data.author,
-            quantity: data.quantity || 0  // Set default quantity to 0 if missing
-        }));
-
-        await Book.insertMany(books);
-        res.status(200).json({ message: 'Books uploaded successfully!' });
-    } catch (error) {
-        console.error('Error uploading books:', error);
-        res.status(500).json({ error: 'Failed to upload books' });
+  try {
+    const fileExtension = path.extname(req.file.originalname).toLowerCase();
+    if (fileExtension !== '.xlsx' && fileExtension !== '.xls') {
+      return res.status(400).json({ error: 'Invalid file format. Please upload an Excel file.' });
     }
+
+    const workbook = xlsx.readFile(req.file.path);
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const booksData = xlsx.utils.sheet_to_json(sheet);
+
+    for (let data of booksData) {
+      const isbn = data.isbn;
+
+      if (!isbn) {
+        continue; // Skip books without ISBN
+      }
+
+      const existingBook = await Book.findOne({ isbn });
+
+      if (existingBook) {
+        // Update existing book if it already exists
+        existingBook.total += data.quantity || 0;   // Add to total count
+        existingBook.available += data.quantity || 0; // Add to available count
+        await existingBook.save();
+      } else {
+        // Insert new book if not found
+        const newBook = new Book({
+          bookName: data.bookName,
+          author: data.author,
+          isbn: data.isbn,
+          total: data.quantity || 0,      // Set total count
+          assigned: 0,                    // Initial assigned count
+          available: data.quantity || 0   // Set available count
+        });
+        await newBook.save();
+      }
+    }
+
+    res.status(200).json({ message: 'Books uploaded successfully!' });
+
+  } catch (error) {
+    console.error('Error uploading books:', error);
+    res.status(500).json({ error: 'Failed to upload books' });
+  }
 });
-  
-  // Endpoint to retrieve books with pagination
-  app.get('/getBooks', async (req, res) => {
-    const page = parseInt(req.query.page) || 1; // Default to page 1
-    const limit = parseInt(req.query.limit) || 10; // Default to 10 items per page
-  
-    try {
-      const books = await Book.find()
-        .skip((page - 1) * limit)
-        .limit(limit);
-  
-      const total = await Book.countDocuments();
-  
-      res.status(200).json({
-        books,
-        currentPage: page,
-        totalPages: Math.ceil(total / limit),
-        totalItems: total
-      });
-    } catch (error) {
-      console.error('Error fetching books:', error);
-      res.status(500).json({ error: 'Failed to retrieve books' });
+
+
+// Endpoint to retrieve books with pagination
+app.get('/getBooks', async (req, res) => {
+  const page = parseInt(req.query.page) || 1; // Default to page 1
+  const limit = parseInt(req.query.limit) || 10; // Default to 10 items per page
+
+  try {
+    const books = await Book.find()
+      .skip((page - 1) * limit)
+      .limit(limit);
+
+    const total = await Book.countDocuments();
+
+    res.status(200).json({
+      books,
+      currentPage: page,
+      totalPages: Math.ceil(total / limit),
+      totalItems: total
+    });
+  } catch (error) {
+    console.error('Error fetching books:', error);
+    res.status(500).json({ error: 'Failed to retrieve books' });
+  }
+});
+
+// Endpoint for assigning a book to a student
+app.post('/assignBook', async (req, res) => {
+  const { isbn, studentId, dueDate } = req.body;
+
+  try {
+    const book = await Book.findOne({ isbn });
+
+    if (!book) {
+      return res.status(404).json({ error: 'Book not found' });
     }
-  });
+
+    // Check if enough books are available for assignment
+    if (book.available < 1) {
+      return res.status(400).json({ error: 'No available copies to assign' });
+    }
+
+    const isAssigned = await Assignment.findOne({ studentId, bookId: book._id });
+    if (isAssigned) {
+      return res.status(400).json({ error: 'Book already assigned to student' });
+    }
+
+    const assignment = new Assignment({
+      studentId,
+      bookId: book._id,
+      assignedDate: new Date(),
+      returnDate: dueDate
+    });
+
+    await assignment.save();
+
+    book.assigned += 1;
+    book.available -= 1;
+
+    await book.save();
+    res.status(200).json({ message: 'Book assigned successfully' });
+
+  } catch (error) {
+    console.error('Error assigning book:', error);
+    res.status(500).json({ error: 'Failed to assign book' });
+  }
+});
+
+// Endpoint for returning a book
+app.post('/returnBook', async (req, res) => {
+  const { isbn, studentId } = req.body;
+
+  try {
+    const book = await Book.findOne({ isbn });
+
+    if (!book) {
+      return res.status(404).json({ error: 'Book not found' });
+    }
+
+    // Ensure that the student has already been assigned this book (check assignment record)
+    // Assuming you have a method to validate the student's book assignment, like:
+    // const assignment = await Assignment.findOne({ studentId, isbn });
+
+    // Update the assigned and available counts
+    book.assigned -= 1;
+    book.available += 1;
+
+    await book.save();  // Save the updated book data
+
+    // Remove the assignment record
+    await Assignment.deleteOne({ studentId, bookId: book._id});
+    res.status(200).json({ message: 'Book returned successfully' });
+
+  } catch (error) {
+    console.error('Error returning book:', error);
+    res.status(500).json({ error: 'Failed to return book' });
+  }
+});
+
+
+// to get book(s) assigned to a student
+app.get('/searchStudent/:username', async (req, res) => {
+  const { username } = req.params;
+
+  try {
+    const student = await Student.findOne({ username }).populate('assignedBooks.bookId');
+
+    if (!student) {
+      return res.status(404).json({ message: 'Student not found' });
+    }
+
+    res.status(200).json({
+      username: student.username,
+      assignedBooks: student.assignedBooks
+    });
+
+  } catch (error) {
+    console.error('Error searching for student:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.get('/assignedBooks', async (req, res) => {
+  try {
+    const assignedBooks = await Assignment.find()
+      .populate('studentId')
+      .populate('bookId')
+      ;
+
+    return res.json(assignedBooks);
+  } catch (error) {
+    console.error('Error fetching assigned books:', error);
+    res.status(500).json({ error: 'Failed to fetch assigned books' });
+  }
+});

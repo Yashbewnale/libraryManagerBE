@@ -1,9 +1,10 @@
 const User = require('../models/user.model');
 const jwt = require('jsonwebtoken');
 const JWT_SECRET = '1234567890';
+const bcrypt = require('bcrypt'); 
 
 // Function to authenticate an admin user
-async function authenticateAdmin(username, password, res) {
+async function authenticateUser(username, password, isAdmin, res) {
     try {
       const user = await User.findOne({ username });
   
@@ -12,6 +13,7 @@ async function authenticateAdmin(username, password, res) {
         res.send("{ success: false, message: 'Not authorized' }");
         return;
       }
+      console.log(user.comparePassword(password));
   
       const isMatch = await user.comparePassword(password);
       if (!isMatch) {
@@ -42,5 +44,5 @@ async function authenticateAdmin(username, password, res) {
   
 
   module.exports = {
-    authenticateAdmin,
+    authenticateUser,
   }
