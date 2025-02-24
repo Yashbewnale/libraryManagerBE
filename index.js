@@ -64,6 +64,42 @@ app.get('/allStudents', async (req, res) => {
   }
 });
 
+// search students by fullName with space
+app.get('/searchStudent/:fullName', async (req, res) => {
+  const fullName = req.params.fullName;
+
+  try {
+    const students = await Student.find({
+      fullName: { $regex: fullName, $options: 'i' } // 'i' for case-insensitive
+    });
+
+    if (students.length === 0) {
+      return res.status(200).json({ students: [] });
+    }
+
+    res.status(200).json({
+      students
+    });
+  } catch (error) {
+    console.error('Error searching for student:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// deleteStudent by id
+app.delete('/deleteStudent/:id', async (req, res) => {
+  const studentId = req.params.id;
+
+  try {
+    const student = await Student
+      .findOneAndDelete({ _id: studentId });
+      res.status(200).json({ message: 'Student deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting student:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 
 // BOOKS
 
@@ -324,3 +360,4 @@ app.delete('/deleteBook', async (req, res) => {
   }
 }
 );
+
