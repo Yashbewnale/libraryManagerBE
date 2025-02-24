@@ -142,7 +142,7 @@ app.get('/getBooks', async (req, res) => {
 
 // Endpoint for assigning a book to a student
 app.post('/assignBook', async (req, res) => {
-  const { isbn, studentId, dueDate } = req.body;
+  const { isbn, studentId, dueDate, studentUsername } = req.body;
 
   try {
     const book = await Book.findOne({ isbn });
@@ -156,7 +156,7 @@ app.post('/assignBook', async (req, res) => {
       return res.status(400).json({ error: 'No available copies to assign' });
     }
 
-    const isAssigned = await Assignment.findOne({ studentId, bookId: book._id });
+    const isAssigned = await Assignment.findOne({ studentId });
     if (isAssigned) {
       return res.status(400).json({ error: 'Book already assigned to student' });
     }
@@ -164,8 +164,10 @@ app.post('/assignBook', async (req, res) => {
     const assignment = new Assignment({
       studentId,
       bookId: book._id,
+      isbn: isbn,
       assignedDate: new Date(),
-      returnDate: dueDate
+      returnDate: dueDate,
+      studentUsername: studentUsername
     });
 
     await assignment.save();
@@ -204,7 +206,7 @@ app.post('/returnBook', async (req, res) => {
     await book.save();  // Save the updated book data
 
     // Remove the assignment record
-    await Assignment.deleteOne({ studentId, bookId: book._id});
+    await Assignment.deleteOne({ studentId });
     res.status(200).json({ message: 'Book returned successfully' });
 
   } catch (error) {
@@ -216,18 +218,18 @@ app.post('/returnBook', async (req, res) => {
 
 // to get book(s) assigned to a student
 app.get('/searchStudent/:username', async (req, res) => {
-  const { username } = req.params;
+  const studentUsername = req.params.username;
 
   try {
-    const student = await Student.findOne({ username }).populate('assignedBooks.bookId');
+    const student = await Assignment.findOne({ studentUsername })
+    .populate('bookId');
 
     if (!student) {
-      return res.status(404).json({ message: 'Student not found' });
+      return res.status(404).json({ message: 'No books assigned to student.' });
     }
 
     res.status(200).json({
-      username: student.username,
-      assignedBooks: student.assignedBooks
+      res: student
     });
 
   } catch (error) {
@@ -238,10 +240,11 @@ app.get('/searchStudent/:username', async (req, res) => {
 
 app.get('/assignedBooks', async (req, res) => {
   try {
+    // Fetch all assignments and populate studentId and bookId
     const assignedBooks = await Assignment.find()
       .populate('studentId')
       .populate('bookId')
-      ;
+      .sort({ returnDate: 1 }); // Sort by earliest returnDate first
 
     return res.json(assignedBooks);
   } catch (error) {
@@ -249,3 +252,75 @@ app.get('/assignedBooks', async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch assigned books' });
   }
 });
+
+
+
+// for search book by isbn
+app.get('/searchBook', async (req, res) => {
+  
+  const isbn = req.query.isbn;
+
+  // Remove hyphens from the search query
+  const sanitizedIsbn = isbn.replace(/-/g, '');
+
+  try {
+    // Return book if it contains parts of the isbn
+    const books = await Book.find({
+      isbn: { $regex: sanitizedIsbn, $options: 'i' } // 'i' for case-insensitive
+    });
+
+    if (books.length === 0) {
+      return res.status(200).json({ books: [] });
+    }
+
+    res.status(200).json({
+      books
+    });
+  } catch (error) {
+    console.error('Error searching for book:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.get('/searchAssignedBook', async (req, res) => {
+  
+  const isbn = req.query.isbn;
+
+  // Remove hyphens from the search query
+  const sanitizedIsbn = isbn.replace(/-/g, '');
+
+  try {
+    // Return book if it contains parts of the isbn
+    const books = await Assignment.find({
+      isbn: { $regex: sanitizedIsbn, $options: 'i' } // 'i' for case-insensitive
+    }).populate('studentId')
+    .populate('bookId')
+    ;
+
+    if (books.length === 0) {
+      return res.status(200).json({ books: [] });
+    }
+    
+    res.status(200).json({
+      books
+    });
+  } catch (error) {
+    console.error('Error searching for book:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// delete book by isbn
+app.delete('/deleteBook', async (req, res) => {
+  const isbn = req.query.isbn;
+
+  try {
+    const book = await Book
+      .findOneAndDelete({ isbn });
+      res.status(200).json({ message: 'Book deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting book:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+}
+);

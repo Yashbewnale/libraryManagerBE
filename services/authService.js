@@ -2,18 +2,23 @@ const User = require('../models/user.model');
 const jwt = require('jsonwebtoken');
 const JWT_SECRET = '1234567890';
 const bcrypt = require('bcrypt'); 
+const Student = require('../models/student.model');
 
 // Function to authenticate an admin user
 async function authenticateUser(username, password, isAdmin, res) {
     try {
-      const user = await User.findOne({ username });
+      let user;
+      if(isAdmin){
+        user = await User.findOne({ username });
+      }else{
+        user = await Student.findOne({ username });
+      }
   
       if (!user) {
         console.log('Not authorized.');
         res.send("{ success: false, message: 'Not authorized' }");
         return;
       }
-      console.log(user.comparePassword(password));
   
       const isMatch = await user.comparePassword(password);
       if (!isMatch) {
@@ -25,16 +30,13 @@ async function authenticateUser(username, password, isAdmin, res) {
 
     // Generate JWT token
     const authToken = jwt.sign(
-        { id: user._id, username: user.username }, // Payload (user data)
+        { id: user._id, username: user.username, isAdmin: isAdmin }, // Payload (user data)
         JWT_SECRET, // Secret key
         { expiresIn: '6h' } // Token expiration
       );
   
-  
-      console.log('Admin authenticated successfully.');
-      res.json({ success: true, token: authToken });
+      res.json({ success: true, token: authToken, username: user.username, fullName:user?.fullName, isAdmin: isAdmin });
       return;
-      // Add further logic here if needed
     } catch (error) {
       console.error('Error during authentication:', error);
       res.send("{ success: false, message: 'Error during authentication' }");
