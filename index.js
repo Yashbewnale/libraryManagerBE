@@ -115,32 +115,43 @@ app.post('/uploadBooks', upload.single('file'), async (req, res) => {
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     const booksData = xlsx.utils.sheet_to_json(sheet);
 
-    for (let data of booksData) {
-      const isbn = data.isbn;
+    const errors = [];
 
-      if (!isbn) {
-        continue; // Skip books without ISBN
+    for (let i = 0; i < booksData.length; i++) {
+      const data = booksData[i];
+      const isbn = data.isbn && String(data.isbn).trim().toLowerCase();
+      const bookName = data.bookName && data.bookName.trim();
+      const author = data.author && data.author.trim();
+      const quantity = data.quantity;
+
+      if (!isbn || !bookName || !author || quantity == null) {
+        errors.push({ row: i + 1, error: 'Missing required fields' });
+        continue; // Skip books with missing required fields
       }
 
       const existingBook = await Book.findOne({ isbn });
 
       if (existingBook) {
         // Update existing book if it already exists
-        existingBook.total += data.quantity || 0;   // Add to total count
-        existingBook.available += data.quantity || 0; // Add to available count
+        existingBook.total += quantity;   // Add to total count
+        existingBook.available += quantity; // Add to available count
         await existingBook.save();
       } else {
         // Insert new book if not found
         const newBook = new Book({
-          bookName: data.bookName,
-          author: data.author,
-          isbn: data.isbn,
-          total: data.quantity || 0,      // Set total count
-          assigned: 0,                    // Initial assigned count
-          available: data.quantity || 0   // Set available count
+          bookName: bookName,
+          author: author,
+          isbn: isbn,
+          total: quantity,      // Set total count
+          assigned: 0,          // Initial assigned count
+          available: quantity   // Set available count
         });
         await newBook.save();
       }
+    }
+
+    if (errors.length > 0) {
+      return res.status(400).json({ message: 'Some books could not be uploaded', errors });
     }
 
     res.status(200).json({ message: 'Books uploaded successfully!' });
