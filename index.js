@@ -264,7 +264,7 @@ app.post('/returnBook', async (req, res) => {
 
 
 // to get book(s) assigned to a student
-app.get('/searchStudent/:username', async (req, res) => {
+app.get('/searchStudentForBooks/:username', async (req, res) => {
   const studentUsername = req.params.username;
 
   try {
